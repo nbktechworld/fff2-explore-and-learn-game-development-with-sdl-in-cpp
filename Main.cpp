@@ -1,10 +1,176 @@
+#include <fstream>
 #include <iostream>
+#include <string>
 #include <SDL2/SDL.h>
+
+enum TileType {
+  Floor, // 0
+  Wall   // 1
+};
+
+int WINDOW_WIDTH = 640; // 20 tiles
+int WINDOW_HEIGHT = 480; // 15 tiles
+int TILE_SIZE = 32;
+
+SDL_Surface* createGameMapSurface(int* tiles) {
+  SDL_Surface* surface = SDL_CreateRGBSurface(
+    0,
+    640,
+    480,
+    32,
+    0,
+    0,
+    0,
+    0
+  );
+
+  int row = 0;
+  int column = 0;
+
+  SDL_Rect rectangle;
+  rectangle.w = 32;
+  rectangle.h = 32;
+
+  while (row < 15) {// 480 / 32
+    while (column < 20) {
+      rectangle.x = column * 32; //todo: TILE_SIZE CONSTANT
+      rectangle.y = row * 32;
+      int currentTileId = tiles[row * 20 + column];
+      Uint32 tileColor;
+      if (currentTileId == 0) {
+        // walkable tile
+        tileColor = SDL_MapRGB(surface->format, 0, 0, 0);
+      }
+      else if (currentTileId == 1) {
+        // wall tile (blocks you)
+        tileColor = SDL_MapRGB(surface->format, 255, 255, 255);
+      }
+
+      SDL_FillRect(surface, &rectangle, tileColor);
+
+      column++;
+    }
+
+    column = 0;
+    row++;
+  }
+
+  return surface;
+}
+
+void printGameMap(int* tiles, SDL_Rect entrancePosition, SDL_Rect exitPosition) {
+  std::cout << "Entrance: (" << entrancePosition.x << ", " << entrancePosition.y << ")" << std::endl;
+  std::cout << "Exit: (" << exitPosition.x << ", " << exitPosition.y << ")" << std::endl;
+
+  for (int i = 0; i < 300; i++) {
+    if (i != 0 && i % 20 == 0) {
+      std::cout << std::endl;
+    }
+    std::cout << tiles[i] << " ";
+  }
+  std::cout << std::endl;
+}
+
+void loadGameMap(int* tiles, SDL_Rect &entrancePosition, SDL_Rect &exitPosition) {
+  std::ifstream gameMapFile("GameMap.txt");
+
+  if (gameMapFile.is_open()) {
+    int entranceLine;
+    int entranceColumn;
+    gameMapFile >> entranceLine;
+    gameMapFile >> entranceColumn;
+    entrancePosition.x = entranceColumn * TILE_SIZE;
+    entrancePosition.y = entranceLine * TILE_SIZE;
+
+    int exitLine, exitColumn;
+    gameMapFile >> exitLine >> exitColumn;
+    exitPosition.x = exitColumn * TILE_SIZE;
+    exitPosition.y = exitLine * TILE_SIZE;
+
+    int tileId;
+    int index = 0;
+    while (gameMapFile >> tileId) {
+      tiles[index] = tileId;
+      index++;
+    }
+
+    gameMapFile.close();
+  }
+}
+
+// Function to map the coordinates with the element in array of tiles
+int mapCoordinateToTileId(SDL_Rect position, int tiles[300]) {
+  int tileSize = 32;
+  int tilesAcross = 20;
+  int index = position.y / tileSize * tilesAcross + position.x / tileSize;
+
+  return tiles[index];
+}
+
+bool isWalkableTile(int tileId) {
+  if (tileId == Floor) {
+    return true;
+  }
+
+  return false;
+}
+
+void handlePlayerInput(SDL_Event event, SDL_Rect& playerPosition, int gameMapTiles[300]) {
+  SDL_Rect newPosition = playerPosition;
+  int nextTileId;
+
+  if (event.key.keysym.sym == SDLK_RIGHT) {
+    // update player position
+    if (playerPosition.x + 32 < WINDOW_WIDTH) {
+      // check if hitting a wall
+      newPosition.x = newPosition.x + 32;
+      nextTileId = mapCoordinateToTileId(newPosition, gameMapTiles);
+      if (isWalkableTile(nextTileId)) {
+        playerPosition.x = playerPosition.x + 32;
+      }
+    }
+  }
+  else if (event.key.keysym.sym == SDLK_DOWN) {
+    if (playerPosition.y + 32 < WINDOW_HEIGHT) {
+      newPosition.y = newPosition.y + 32;
+      nextTileId = mapCoordinateToTileId(newPosition, gameMapTiles);
+      if (isWalkableTile(nextTileId)) {
+        playerPosition.y = playerPosition.y + 32;
+      }
+    }
+  }
+  else if (event.key.keysym.sym == SDLK_LEFT) {
+    if (playerPosition.x - 32 >= 0) {
+      newPosition.x = newPosition.x - 32;
+      nextTileId = mapCoordinateToTileId(newPosition, gameMapTiles);
+      if (isWalkableTile(nextTileId)) {
+        playerPosition.x = playerPosition.x - 32;
+      }
+    }
+  }
+  else if (event.key.keysym.sym == SDLK_UP) {
+    if (playerPosition.y - 32 >= 0) {
+      newPosition.y = newPosition.y - 32;
+      nextTileId = mapCoordinateToTileId(newPosition, gameMapTiles);
+      if (isWalkableTile(nextTileId)) {
+        playerPosition.y = playerPosition.y - 32;
+      }
+    }
+  }
+}
+
+void paintEntrance(SDL_Surface* surface, SDL_Rect entrancePosition) {
+  Uint32 color = SDL_MapRGB(surface->format, 128, 255, 128);
+  SDL_FillRect(surface, &entrancePosition, color);
+}
+
+void paintExit(SDL_Surface* surface, SDL_Rect exitPosition) {
+  Uint32 color = SDL_MapRGB(surface->format, 255, 128, 128);
+  SDL_FillRect(surface, &exitPosition, color);
+}
 
 int main(int argc, char* argv[]) {
   std::cout << "Starting" << std::endl;
-  int WINDOW_WIDTH = 640;
-  int WINDOW_HEIGHT = 480;
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     SDL_Log("Failed to initialize SDL: %s", SDL_GetError());
@@ -25,22 +191,24 @@ int main(int argc, char* argv[]) {
   }
 
   SDL_Surface* windowSurface = SDL_GetWindowSurface(window);
-  // SDL_Surface* surface = SDL_CreateRGBSurface(
-  //   0,
-  //   640,
-  //   480,
-  //   32,
-  //   0,
-  //   0,
-  //   0,
-  //   0
-  // );
 
+  int gameMapTiles[300] = { 0 };
+  SDL_Rect entrancePosition = { 0, 0, TILE_SIZE, TILE_SIZE };
+  SDL_Rect exitPosition = { 0, 0, TILE_SIZE, TILE_SIZE };
+  loadGameMap(gameMapTiles, entrancePosition, exitPosition);
+  printGameMap(gameMapTiles, entrancePosition, exitPosition);
+  SDL_Surface* gameMapSurface = createGameMapSurface(gameMapTiles);
+  if (gameMapSurface == NULL) {
+    SDL_Log("Failed to create game map surface: %s", SDL_GetError());
+    return 3;
+  }
+  paintEntrance(gameMapSurface, entrancePosition);
+  paintExit(gameMapSurface, exitPosition);
 
   SDL_Event event;
 
   bool quit = false;
-  SDL_Rect playerPosition = {0, 0, 32, 32};
+  SDL_Rect playerPosition = {entrancePosition.x, entrancePosition.y, 32, 32};
 
   while (!quit) {
     while (SDL_PollEvent(&event) != 0) {
@@ -48,44 +216,14 @@ int main(int argc, char* argv[]) {
         quit = true;
       }
       else if (event.type == SDL_KEYDOWN) {
-        if (event.key.keysym.sym == SDLK_RIGHT) {
-          // update player position
-          if (playerPosition.x + 32 < WINDOW_WIDTH) {
-            playerPosition.x = playerPosition.x + 32;
-          }
-        }
-        else if (event.key.keysym.sym == SDLK_DOWN) {
-          if (playerPosition.y + 32 < WINDOW_HEIGHT) {
-            playerPosition.y = playerPosition.y + 32;
-          }
-        }
-        else if (event.key.keysym.sym == SDLK_LEFT) {
-          if (playerPosition.x - 32 >= 0) {
-            playerPosition.x = playerPosition.x - 32;
-          }
-        }
-        else if (event.key.keysym.sym == SDLK_UP) {
-          if (playerPosition.y - 32 >= 0) {
-            playerPosition.y = playerPosition.y - 32;
-          }
-        }
+        handlePlayerInput(event, playerPosition, gameMapTiles);
       }
     }
 
-    SDL_FillRect(windowSurface, NULL, SDL_MapRGB(windowSurface->format, 0, 0, 255));
-    SDL_Rect rectangle1;
-    rectangle1.w = WINDOW_WIDTH * 3 / 4;
-    rectangle1.h = WINDOW_HEIGHT * 3 / 4 ;
-    rectangle1.x = (WINDOW_WIDTH - rectangle1.w) / 2;
-    rectangle1.y = (WINDOW_HEIGHT - rectangle1.h) / 2;
-    SDL_FillRect(windowSurface, &rectangle1, SDL_MapRGB(windowSurface->format, 255, 0, 0));
-
-    SDL_Rect rectangle2;
-    rectangle2.w = WINDOW_WIDTH / 2;
-    rectangle2.h = WINDOW_HEIGHT / 2;
-    rectangle2.x = (WINDOW_WIDTH - rectangle2.w) / 2;
-    rectangle2.y = (WINDOW_HEIGHT - rectangle2.h) / 2;
-    SDL_FillRect(windowSurface, &rectangle2, SDL_MapRGB(windowSurface->format, 0, 255, 0));
+    if (SDL_BlitSurface(gameMapSurface, NULL, windowSurface, NULL) != 0) {
+      SDL_Log("There was a problem blitting the game map surface onto the window surface: %s", SDL_GetError());
+      return 4;
+    };
 
     Uint32 playerColor = SDL_MapRGB(windowSurface->format, 128, 128, 128);
     SDL_FillRect(windowSurface, &playerPosition, playerColor);
@@ -97,6 +235,7 @@ int main(int argc, char* argv[]) {
 
   // SDL_Delay(20000);
 
+  SDL_FreeSurface(gameMapSurface);
   SDL_DestroyWindow(window);
 
   SDL_Quit();
